@@ -9,10 +9,10 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
     public static long Solve(TMaze maze)
     {
         var startState = maze.State;
-        var goalState = CalculateGoalState(startState.Rooms[0].Length, maze.CorridorLength);
+        var goalState = CalculateGoalState(startState.Rooms[0].Length, maze.State.Corridor.Length);
         var queue = new PriorityQueue<(MazeState State, long Cost), long>();
         var bestCosts = new Dictionary<MazeState, long>();
-        var startHeuristic = CalculateHeuristic(startState);
+        var startHeuristic = CalculateHeuristic(maze, startState);
         queue.Enqueue((startState, 0), startHeuristic);
         bestCosts[startState] = 0;
         while (queue.TryDequeue(out var current, out _))
@@ -24,10 +24,11 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
             foreach (var (nextState, moveCost) in currentMaze.AvailableStatesWithEnergyRequired)
             {
                 var newCost = currentCost + moveCost;
-                if (!bestCosts.ContainsKey(nextState) || newCost < bestCosts[nextState])
+                if (!bestCosts.TryGetValue(nextState, out var value) || newCost < value)
                 {
-                    bestCosts[nextState] = newCost;
-                    var priority = newCost + CalculateHeuristic(nextState);
+                    value = newCost;
+                    bestCosts[nextState] = value;
+                    var priority = newCost + CalculateHeuristic(maze, nextState);
                     queue.Enqueue((nextState, newCost), priority);
                 }
             }
@@ -35,19 +36,20 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
         return -1;
     }
 
-    private static long CalculateHeuristic(MazeState state)
-        => CalculateHeuristicForCorridor(state) + CalculateHeuristicForRooms(state);
+    private static long CalculateHeuristic(TMaze maze, MazeState state)
+        => CalculateHeuristicForCorridor(maze, state) + CalculateHeuristicForRooms(maze, state);
 
-    private static long CalculateHeuristicForCorridor(MazeState state)
+    private static long CalculateHeuristicForCorridor(TMaze maze, MazeState state)
     {
         var result = 0L;
         for (var i = 0; i < state.Corridor.Length; i++)
         {
             var cell = state.Corridor[i];
-            if (cell.Type != MazeCellType.Object) continue;
+            if (cell.Type != MazeCellType.Object) 
+                continue;
             
             var mazeObject = cell.Object!.Value;
-            var connectionCellIdx = GetConnectionCellIndexForRoomIndex(mazeObject.TargetRoomIdx);
+            var connectionCellIdx = maze.GetConnectionCellIndexForRoomIndex(mazeObject.TargetRoomIdx);
             
             var steps = Math.Abs(i - connectionCellIdx) + 1;
             result += (long)steps * mazeObject.EnergyRequiredToMove;
@@ -55,7 +57,7 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
         return result;
     }
 
-    private static long CalculateHeuristicForRooms(MazeState state)
+    private static long CalculateHeuristicForRooms(TMaze maze, MazeState state)
     {
         var result = 0L;
         var depth = state.Rooms[0].Length;
@@ -77,8 +79,8 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
                         }
                     if (!mustMove) continue;
                 }
-                var startConnectionCell = GetConnectionCellIndexForRoomIndex(roomIdx);
-                var targetConnectionCell = GetConnectionCellIndexForRoomIndex(mazeObject.TargetRoomIdx);
+                var startConnectionCell = maze.GetConnectionCellIndexForRoomIndex(roomIdx);
+                var targetConnectionCell = maze.GetConnectionCellIndexForRoomIndex(mazeObject.TargetRoomIdx);
                 var steps = d + 1 + Math.Abs(startConnectionCell - targetConnectionCell) + 1;
                 result += (long)steps * mazeObject.EnergyRequiredToMove;
             }
@@ -98,6 +100,4 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
         }
         return new MazeState { Corridor = corridor, Rooms = rooms };
     }
-    
-    private static int GetConnectionCellIndexForRoomIndex(int roomIndex) => roomIndex * 2 + 2;
 }

@@ -9,19 +9,17 @@ public class Maze : IMaze
     private static readonly int[] StopCorridorCellsIndices = [0, 1, 3, 5, 7, 9, 10];
     private static readonly int[] ConnectionCellsIndices = [2, 4, 6, 8];
 
-    public int CorridorLength { get; }
     public MazeState State { get; }
     public Dictionary<MazeState, int> AvailableStatesWithEnergyRequired { get; }
 
-    private Maze(MazeState state, int corridorLength)
+    private Maze(MazeState state)
     {
         State = state;
-        CorridorLength = corridorLength;
         AvailableStatesWithEnergyRequired = new();
         UpdateAvailableStates();
     }
 
-    public static IMaze FromMazeState(MazeState state) => new Maze(state, state.Corridor.Length);
+    public static IMaze FromMazeState(MazeState state) => new Maze(state);
 
     public static IMaze FromStringLines(List<string> lines)
     {
@@ -41,7 +39,19 @@ public class Maze : IMaze
         }
 
         var state = new MazeState { Corridor = corridor, Rooms = rooms };
-        return new Maze(state, corridorLength);
+        return new Maze(state);
+    }
+
+    public int GetConnectionCellIndexForRoomIndex(int roomIdx)
+    {
+        return roomIdx switch
+        {
+            0 => 2, 
+            1 => 4, 
+            2 => 6, 
+            3 => 8,
+            _ => throw new InvalidOperationException("Room index should be between 0 and 3")
+        };
     }
 
     private void UpdateAvailableStates()
