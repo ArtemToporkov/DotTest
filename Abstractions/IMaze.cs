@@ -5,7 +5,7 @@ namespace DotTest.Abstractions;
 public interface IMaze
 {
     public MazeState State { get; }
-    public static abstract int CorridorLength { get; }
+    public int CorridorLength { get; }
     public Dictionary<MazeState, int> AvailableStatesWithEnergyRequired { get; }
     
     public static abstract IMaze FromStringLines(List<string> lines);

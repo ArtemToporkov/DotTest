@@ -9,7 +9,7 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
     public static long Solve(TMaze maze)
     {
         var startState = maze.State;
-        var goalState = CalculateGoalState(startState.Rooms[0].Length);
+        var goalState = CalculateGoalState(startState.Rooms[0].Length, maze.CorridorLength);
         var queue = new PriorityQueue<(MazeState State, long Cost), long>();
         var bestCosts = new Dictionary<MazeState, long>();
         var startHeuristic = CalculateHeuristic(startState);
@@ -85,9 +85,9 @@ public static class MazeSolver<TMaze> where TMaze : IMaze
         return result;
     }
 
-    private static MazeState CalculateGoalState(int depth)
+    private static MazeState CalculateGoalState(int depth, int corridorLength)
     {
-        var corridor = Enumerable.Repeat(new MazeCell(MazeCellType.Empty), TMaze.CorridorLength).ToArray();
+        var corridor = Enumerable.Repeat(new MazeCell(MazeCellType.Empty), corridorLength).ToArray();
         var rooms = new MazeCell[4][];
         for (var i = 0; i < 4; i++)
         {

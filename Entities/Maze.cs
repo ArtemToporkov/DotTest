@@ -6,26 +6,27 @@ namespace DotTest.Entities;
 
 public class Maze : IMaze
 {
-    public static int CorridorLength => 11;
-    
-    private static readonly int[] StopCorridorCells = [0, 1, 3, 5, 7, 9, 10];
-    private static readonly int[] ConnectionCells = [2, 4, 6, 8];
+    private static readonly int[] StopCorridorCellsIndices = [0, 1, 3, 5, 7, 9, 10];
+    private static readonly int[] ConnectionCellsIndices = [2, 4, 6, 8];
 
+    public int CorridorLength { get; }
     public MazeState State { get; }
     public Dictionary<MazeState, int> AvailableStatesWithEnergyRequired { get; }
 
-    private Maze(MazeState state)
+    private Maze(MazeState state, int corridorLength)
     {
         State = state;
+        CorridorLength = corridorLength;
         AvailableStatesWithEnergyRequired = new();
         UpdateAvailableStates();
     }
 
-    public static IMaze FromMazeState(MazeState state) => new Maze(state);
+    public static IMaze FromMazeState(MazeState state) => new Maze(state, state.Corridor.Length);
 
     public static IMaze FromStringLines(List<string> lines)
     {
-        var corridor = Enumerable.Repeat(new MazeCell(MazeCellType.Empty), CorridorLength).ToArray();
+        var corridorLength = lines[0].Length - 2;
+        var corridor = Enumerable.Repeat(new MazeCell(MazeCellType.Empty), corridorLength).ToArray();
         var roomLength = lines.Count - 3;
 
         var rooms = new MazeCell[4][];
@@ -40,7 +41,7 @@ public class Maze : IMaze
         }
 
         var state = new MazeState { Corridor = corridor, Rooms = rooms };
-        return new Maze(state);
+        return new Maze(state, corridorLength);
     }
 
     private void UpdateAvailableStates()
@@ -61,7 +62,7 @@ public class Maze : IMaze
                 occupantCell => occupantCell.Type == MazeCellType.Empty || occupantCell.Object!.Value.Type == mazeObject.Type);
             if (!roomIsReady) continue;
 
-            var connectionCellIdx = ConnectionCells[mazeObject.TargetRoomIdx];
+            var connectionCellIdx = ConnectionCellsIndices[mazeObject.TargetRoomIdx];
             if (!IsCorridorPathClear(State.Corridor, corridorCellIdx, connectionCellIdx)) continue;
 
             var targetDepth = Array.FindLastIndex(
@@ -89,8 +90,8 @@ public class Maze : IMaze
 
             if (ShouldObjectStayInCorrectRoom(mazeObject, roomIdx, topDepth, depth)) continue;
 
-            var startEntrance = ConnectionCells[roomIdx];
-            foreach (var stopCorridorCell in StopCorridorCells)
+            var startEntrance = ConnectionCellsIndices[roomIdx];
+            foreach (var stopCorridorCell in StopCorridorCellsIndices)
             {
                 if (IsCorridorPathClear(State.Corridor, startEntrance, stopCorridorCell))
                 {
