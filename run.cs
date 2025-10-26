@@ -1,12 +1,13 @@
-﻿using DotTest.Entities;
+﻿using DotTest.Abstractions;
+using DotTest.Entities;
 using DotTest.Helpers;
 
 public class Program
 {
-    private static long Solve(List<string> lines)
+    private static long Solve<TMaze>(List<string> lines) where TMaze : IMaze
     {
-        var maze = Maze.FromStringLines(lines);
-        return MazeSolver.Solve(maze);
+        var maze = (TMaze)TMaze.FromStringLines(lines);
+        return MazeSolver<TMaze>.Solve(maze);
     }
     
     public static void Main(string[] args)
@@ -15,7 +16,7 @@ public class Program
         while (Console.ReadLine() is { } line && !string.IsNullOrEmpty(line))
             lines.Add(line);
 
-        var result = Solve(lines);
+        var result = Solve<Maze>(lines);
         Console.WriteLine(result);
     }
 }

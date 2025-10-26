@@ -1,20 +1,12 @@
-﻿using DotTest.Entities;
+﻿using DotTest.Abstractions;
 using DotTest.Enums;
 using DotTest.ValueObjects;
 
 namespace DotTest.Helpers;
 
-public class MazeSolver
+public static class MazeSolver<TMaze> where TMaze : IMaze
 {
-    private static readonly Dictionary<MazeCellType, int> EnergyRequiredToMove = new()
-    {
-        [MazeCellType.A] = 1, 
-        [MazeCellType.B] = 10,
-        [MazeCellType.C] = 100, 
-        [MazeCellType.D] = 1000
-    };
-
-    public static long Solve(Maze maze)
+    public static long Solve(TMaze maze)
     {
         var startState = maze.State;
         var goalState = CalculateGoalState(startState.Rooms[0].Length);
@@ -28,14 +20,13 @@ public class MazeSolver
             var (currentState, currentCost) = current;
             if (bestCosts.TryGetValue(currentState, out var knownCost) && currentCost > knownCost) continue;
             if (currentState.Equals(goalState)) return currentCost;
-            var currentMaze = new Maze(currentState);
+            var currentMaze = TMaze.FromMazeState(currentState);
             foreach (var (nextState, moveCost) in currentMaze.AvailableStatesWithEnergyRequired)
             {
                 var newCost = currentCost + moveCost;
-                if (!bestCosts.TryGetValue(nextState, out var value) || newCost < value)
+                if (!bestCosts.ContainsKey(nextState) || newCost < bestCosts[nextState])
                 {
-                    value = newCost;
-                    bestCosts[nextState] = value;
+                    bestCosts[nextState] = newCost;
                     var priority = newCost + CalculateHeuristic(nextState);
                     queue.Enqueue((nextState, newCost), priority);
                 }
@@ -45,26 +36,21 @@ public class MazeSolver
     }
 
     private static long CalculateHeuristic(MazeState state)
-    {
-        var corridorCost = CalculateHeuristicForCorridor(state);
-        var roomsCost = CalculateHeuristicForRooms(state);
-        return corridorCost + roomsCost;
-    }
+        => CalculateHeuristicForCorridor(state) + CalculateHeuristicForRooms(state);
 
     private static long CalculateHeuristicForCorridor(MazeState state)
     {
         var result = 0L;
-        for (var corridorCellIdx = 0; corridorCellIdx < state.Corridor.Length; corridorCellIdx++)
+        for (var i = 0; i < state.Corridor.Length; i++)
         {
-            var cellType = state.Corridor[corridorCellIdx];
-            if (cellType == MazeCellType.Empty) 
-                continue;
+            var cell = state.Corridor[i];
+            if (cell.Type != MazeCellType.Object) continue;
             
-            var targetRoomIdx = GetTargetRoomIndex(cellType);
-            var connectionCellIdx = GetConnectionCellIndexForRoomIndex(targetRoomIdx);
+            var mazeObject = cell.Object!.Value;
+            var connectionCellIdx = GetConnectionCellIndexForRoomIndex(mazeObject.TargetRoomIdx);
             
-            var steps = Math.Abs(corridorCellIdx - connectionCellIdx) + 1;
-            result += (long)steps * EnergyRequiredToMove[cellType];
+            var steps = Math.Abs(i - connectionCellIdx) + 1;
+            result += (long)steps * mazeObject.EnergyRequiredToMove;
         }
         return result;
     }
@@ -76,42 +62,42 @@ public class MazeSolver
         for (var roomIdx = 0; roomIdx < 4; roomIdx++)
             for (var d = 0; d < depth; d++)
             {
-                var cellType = state.Rooms[roomIdx][d];
-                if (cellType == MazeCellType.Empty) continue;
-                var targetRoomIdx = GetTargetRoomIndex(cellType);
-                if (targetRoomIdx == roomIdx)
+                var cell = state.Rooms[roomIdx][d];
+                if (cell.Type != MazeCellType.Object) continue;
+
+                var mazeObject = cell.Object!.Value;
+                if (mazeObject.TargetRoomIdx == roomIdx)
                 {
                     var mustMove = false;
                     for (var dd = d + 1; dd < depth; dd++)
-                        if (state.Rooms[roomIdx][dd] != cellType)
+                        if (state.Rooms[roomIdx][dd].Object!.Value.Type != mazeObject.Type)
                         {
                             mustMove = true; 
                             break;
                         }
-                    if (!mustMove) 
-                        continue;
+                    if (!mustMove) continue;
                 }
                 var startConnectionCell = GetConnectionCellIndexForRoomIndex(roomIdx);
-                var targetConnectionCell = GetConnectionCellIndexForRoomIndex(targetRoomIdx);
+                var targetConnectionCell = GetConnectionCellIndexForRoomIndex(mazeObject.TargetRoomIdx);
                 var steps = d + 1 + Math.Abs(startConnectionCell - targetConnectionCell) + 1;
-                result += (long)steps * EnergyRequiredToMove[cellType];
+                result += (long)steps * mazeObject.EnergyRequiredToMove;
             }
         return result;
     }
 
     private static MazeState CalculateGoalState(int depth)
     {
-        var corridor = Enumerable.Repeat(MazeCellType.Empty, Maze.CorridorLength).ToArray(); 
-        var rooms = new MazeCellType[4][];
+        var corridor = Enumerable.Repeat(new MazeCell(MazeCellType.Empty), TMaze.CorridorLength).ToArray();
+        var rooms = new MazeCell[4][];
         for (var i = 0; i < 4; i++)
         {
-            rooms[i] = new MazeCellType[depth];
-            Array.Fill(rooms[i], (MazeCellType)((int)MazeCellType.A + i));
+            rooms[i] = new MazeCell[depth];
+            var goalObject = new MazeObject((MazeObjectType)i);
+            var goalCell = new MazeCell(MazeCellType.Object, goalObject);
+            Array.Fill(rooms[i], goalCell);
         }
         return new MazeState { Corridor = corridor, Rooms = rooms };
     }
-    
-    private static int GetTargetRoomIndex(MazeCellType cellType) => (int)cellType - (int)MazeCellType.A;
     
     private static int GetConnectionCellIndexForRoomIndex(int roomIndex) => roomIndex * 2 + 2;
 }
