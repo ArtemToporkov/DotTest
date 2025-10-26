@@ -1,4 +1,8 @@
-﻿namespace DotTest;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace DotTest;
 
 public interface IMaze
 {
