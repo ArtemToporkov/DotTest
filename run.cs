@@ -1,9 +1,14 @@
-﻿namespace DotTest;
+﻿using DotTest.Abstractions;
+using DotTest.Entities;
+using DotTest.Enums;
+
+namespace DotTest;
 
 public static class Program
 {
     private static int Solve(List<string> lines)
     {
+        var maze = Maze.FromStringLines(lines);
         return 0;
     }
 
