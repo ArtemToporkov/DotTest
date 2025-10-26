@@ -4,8 +4,8 @@ namespace DotTest.ValueObjects;
 
 public readonly struct MazeState : IEquatable<MazeState>
 {
-    public required MazePositionType[] Corridor { get; init; }
-    public required MazePositionType[][] Rooms { get; init; }
+    public required MazeCellType[] Corridor { get; init; }
+    public required MazeCellType[][] Rooms { get; init; }
 
     public bool Equals(MazeState other)
         => Corridor.AsSpan().SequenceEqual(other.Corridor)

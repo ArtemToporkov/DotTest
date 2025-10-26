@@ -1,6 +1,6 @@
 ﻿namespace DotTest.Enums;
 
-public enum MazePositionType
+public enum MazeCellType
 {
     Empty,
     Wall,

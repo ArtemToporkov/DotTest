@@ -1,22 +1,18 @@
-﻿using DotTest.Abstractions;
-using DotTest.Entities;
-using DotTest.Enums;
+﻿using DotTest.Entities;
+using DotTest.Helpers;
 
-namespace DotTest;
-
-public static class Program
+public class Program
 {
-    private static int Solve(List<string> lines)
+    private static long Solve(List<string> lines)
     {
         var maze = Maze.FromStringLines(lines);
-        return 0;
+        return MazeSolver.Solve(maze);
     }
-
-    public static void Main()
+    
+    public static void Main(string[] args)
     {
         var lines = new List<string>();
-
-        while (Console.ReadLine() is { } line)
+        while (Console.ReadLine() is { } line && !string.IsNullOrEmpty(line))
             lines.Add(line);
 
         var result = Solve(lines);
