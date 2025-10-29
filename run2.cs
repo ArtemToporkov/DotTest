@@ -11,13 +11,13 @@ public interface IGraph
     public IReadOnlySet<string> Gateways { get; }
     public IReadOnlySet<(string FirstNode, string SecondNode)> Edges { get; }
 
-    public static abstract IGraph FromEdges(IReadOnlySet<(string, string)> edges);
-    public IReadOnlySet<string> GetNeighbours(string node, NeighboursSort sort = NeighboursSort.None);
+    public IReadOnlySet<string> GetNeighbours(string node, Sort sort = Sort.None);
     public bool TryRemoveEdge(string firstNode, string secondNode);
     public IReadOnlyDictionary<string, int> FindShortestPathsDistances(string startNode);
+    public static abstract IGraph FromEdges(IReadOnlySet<(string, string)> edges);
 }
 
-public enum NeighboursSort
+public enum Sort
 {
     None,
     ByAscending,
@@ -76,14 +76,19 @@ public class Graph : IGraph
             _gateways.Add(node);
     }
     
-    public IReadOnlySet<string> GetNeighbours(string node, NeighboursSort sort = NeighboursSort.None)
+    public IReadOnlySet<string> GetNeighbours(string node, Sort sort = Sort.None)
     {
         if (!_adjacencyList.TryGetValue(node, out var neighbors))
             return new HashSet<string>();
-        if (sort is NeighboursSort.None or NeighboursSort.ByAscending)
-            return neighbors;
-        
-        return neighbors.Reverse().ToHashSet();
+
+        return sort switch
+        {
+            Sort.None or Sort.ByAscending => neighbors,
+            Sort.ByDescending => new SortedSet<string>(
+                neighbors, 
+                Comparer<string>.Create((first, second) => StringComparer.Ordinal.Compare(second, first))),
+            _ => throw new GraphException($"Unknown sort type: {sort.ToString()}")
+        };
     }
 
     public bool TryRemoveEdge(string firstNode, string secondNode)
@@ -97,8 +102,6 @@ public class Graph : IGraph
                 $"Invalid domain state: graph should contain both ({nameof(firstNode)}, {nameof(secondNode)}) " +
                 $"and ({nameof(secondNode)}, {nameof(firstNode)}) edges");
 
-        firstNeighbours.Remove(secondNode);
-        secondNeighbours.Remove(firstNode);
         _cachedEdges = null;
         return true;
     }
@@ -117,7 +120,7 @@ public class Graph : IGraph
         while (queue.Count > 0)
         {
             var currentNode = queue.Dequeue();
-            foreach (var neighbour in GetNeighbours(currentNode, sort: NeighboursSort.ByAscending))
+            foreach (var neighbour in GetNeighbours(currentNode, sort: Sort.ByAscending))
             {
                 if (!distances.ContainsKey(neighbour))
                 {
@@ -134,8 +137,8 @@ public class Graph : IGraph
         var edges = new HashSet<(string FirstNode, string SecondNode)>();
         foreach (var u in _adjacencyList.Keys)
             foreach (var v in _adjacencyList[u])
-                edges.Add((u, v));
-        
+                if (StringComparer.Ordinal.Compare(u, v) < 0)
+                    edges.Add((u, v));
         return edges;
     }
 
@@ -205,7 +208,7 @@ public class VirusSolver<TGraph> where TGraph : IGraph
     {
         var candidates = new List<(string gateway, string node)>();
         foreach (var gateway in graph.Gateways.OrderBy(g => g, StringComparer.Ordinal))
-            foreach (var neighbour in graph.GetNeighbours(gateway, sort: NeighboursSort.ByAscending))
+            foreach (var neighbour in graph.GetNeighbours(gateway, sort: Sort.ByAscending))
                 candidates.Add((gateway, neighbour));
         
         return candidates;
@@ -228,7 +231,7 @@ public class VirusSolver<TGraph> where TGraph : IGraph
         sb.Append('|');
         var gatewayEdges = graph.Gateways
             .OrderBy(g => g, StringComparer.Ordinal)
-            .SelectMany(g => graph.GetNeighbours(g).Select(n => $"{g}-{n}"));
+            .SelectMany(g => graph.GetNeighbours(g, Sort.ByAscending).Select(n => $"{g}-{n}"));
         sb.Append(string.Join(",", gatewayEdges));
         return sb.ToString();
     }
@@ -257,7 +260,7 @@ public class VirusSolver<TGraph> where TGraph : IGraph
         if (!distancesToTarget.TryGetValue(currentNode, out var currentDistance))
             return false;
         
-        foreach (var neighbour in graph.GetNeighbours(currentNode, sort: NeighboursSort.ByAscending))
+        foreach (var neighbour in graph.GetNeighbours(currentNode, sort: Sort.ByAscending))
         {
             if (distancesToTarget.TryGetValue(neighbour, out var neighbourDistance) && 
                 neighbourDistance < currentDistance)
