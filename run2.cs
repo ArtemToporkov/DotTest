@@ -9,13 +9,14 @@ public interface IGraph
 {
     public IReadOnlyCollection<string> Gateways { get; }
     
-    public static abstract IGraph FromEdges(List<(string, string)> edges);
     public IEnumerable<string> GetSortedNeighbours(string node);
     public bool TryRemoveEdge(string from, string to);
     public PathsInfo FindShortestPathsInfo(string start);
+    public IGraph Clone();
+    public IEnumerable<(string u, string v)> GetEdges();
 }
 
-public record PathsInfo(IReadOnlyDictionary<string, int> Distances, IReadOnlyDictionary<string, string> CameFrom);
+public record PathsInfo(IReadOnlyDictionary<string, int> Distances);
 
 public class Graph : IGraph
 {
@@ -24,27 +25,24 @@ public class Graph : IGraph
     private readonly Dictionary<string, SortedSet<string>> _graph;
     private readonly HashSet<string> _gateways;
 
-    private Graph(List<(string, string)> edges)
+    public Graph(IEnumerable<(string, string)> edges)
     {
         _graph = new();
         _gateways = new();
 
         foreach (var (from, to) in edges)
         {
-            if (from == to)
-                throw new InvalidOperationException("Self-loops are not supported");
-            AddDirectedEdgeOrThrow(from, to);
-            AddDirectedEdgeOrThrow(to, from);
+            AddDirectedEdge(from, to);
+            AddDirectedEdge(to, from);
             MarkIfGateway(from);
             MarkIfGateway(to);
         }
     }
 
-    private void AddDirectedEdgeOrThrow(string from, string to)
+    private void AddDirectedEdge(string from, string to)
     {
         _graph.TryAdd(from, new(StringComparer.Ordinal));
-        if (!_graph[from].Add(to))
-            throw new InvalidOperationException("Multiple edges are not supported");
+        _graph[from].Add(to);
     }
 
     private void MarkIfGateway(string node)
@@ -52,9 +50,7 @@ public class Graph : IGraph
         if (IsGateway(node))
             _gateways.Add(node);
     }
-
-    public static IGraph FromEdges(List<(string, string)> edges) => new Graph(edges);
-
+    
     public IEnumerable<string> GetSortedNeighbours(string node) => 
         _graph.TryGetValue(node, out var neighbors) ? neighbors : Enumerable.Empty<string>();
 
@@ -93,43 +89,89 @@ public class Graph : IGraph
                 }
             }
         }
-        return new PathsInfo(distances, cameFrom);
+        return new PathsInfo(distances);
     }
     
+    public IEnumerable<(string u, string v)> GetEdges()
+    {
+        var edges = new List<(string u, string v)>();
+        foreach (var u in _graph.Keys.OrderBy(k => k, StringComparer.Ordinal))
+            foreach (var v in _graph[u])
+                if (StringComparer.Ordinal.Compare(u, v) < 0)
+                    edges.Add((u, v));
+        return edges;
+    }
+
+    public IGraph Clone() => new Graph(GetEdges());
+
     private static bool IsGateway(string node) 
         => !string.IsNullOrEmpty(node) && char.IsUpper(node[0]);
 }
 
-public static class VirusSolver<TGraph> where TGraph : IGraph
+public class VirusSolver<TGraph> where TGraph : IGraph
 {
-    public static List<string> Solve(TGraph graph, string startNode)
+    private readonly HashSet<string> _seenStates = new();
+
+    public List<string> Solve(TGraph graph, string startNode)
+        => TrySolve(graph, startNode, out var result) ? result : new List<string>();
+
+    private bool TrySolve(TGraph graph, string virusPosition, out List<string> result)
     {
-        var cuts = new List<string>();
-        var virusPosition = startNode;
+        result = [];
+        
+        var stateKey = MakeStateKey(graph, virusPosition);
+        if (_seenStates.Contains(stateKey))
+            return false;
+        
+        var pathsFromVirus = graph.FindShortestPathsInfo(virusPosition);
+        if (!TryFindVirusBestTarget(graph, pathsFromVirus, out _))
+            return true;
+        
+        _seenStates.Add(stateKey);
 
-        while (true)
+        var candidateCuts = new List<(string gateway, string node)>();
+        foreach (var gateway in graph.Gateways.OrderBy(g => g, StringComparer.Ordinal))
+            foreach (var neighbour in graph.GetSortedNeighbours(gateway))
+                candidateCuts.Add((gateway, neighbour));
+        
+        foreach (var (gatewayToCut, nodeToCut) in candidateCuts)
         {
-            var pathsFromVirusBeforeCut = graph.FindShortestPathsInfo(virusPosition);
-            if (!TryFindVirusBestTarget(graph, pathsFromVirusBeforeCut, out var targetGateway))
-                break; 
+            var graphClone = (TGraph)graph.Clone();
+            graphClone.TryRemoveEdge(gatewayToCut, nodeToCut);
 
-            if (!TryFindNodeToCutOnPath(graph, virusPosition, targetGateway, out var nodeToCut))
-                break;
+            var pathsAfterCut = graphClone.FindShortestPathsInfo(virusPosition);
+            if (!TryFindVirusBestTarget(graphClone, pathsAfterCut, out var newTargetGateway))
+            {
+                result.Add($"{gatewayToCut}-{nodeToCut}");
+                return true; 
+            }
             
-            cuts.Add($"{targetGateway}-{nodeToCut}");
-            graph.TryRemoveEdge(targetGateway, nodeToCut);
+            var distancesToNewTarget = graphClone.FindShortestPathsInfo(newTargetGateway);
+            if (!TryFindNextStepTowardsTarget(
+                    graphClone, virusPosition, distancesToNewTarget, out var nextVirusPosition))
+                continue;
 
-            var pathsFromVirusAfterCut = graph.FindShortestPathsInfo(virusPosition);
-            if (!TryFindVirusBestTarget(graph, pathsFromVirusAfterCut, out var newTargetGateway))
-                break;
+            if (char.IsUpper(nextVirusPosition[0]))
+                continue;
 
-            var distancesToNewTarget = graph.FindShortestPathsInfo(newTargetGateway);
-            if (!TryFindNextStepTowardsTarget(graph, virusPosition, distancesToNewTarget, out var nextVirusPosition))
-                break;
-            
-            virusPosition = nextVirusPosition;
+            if (TrySolve(graphClone, nextVirusPosition, out var subsequentCuts))
+            {
+                result.Add($"{gatewayToCut}-{nodeToCut}");
+                result.AddRange(subsequentCuts);
+                return true;
+            }
         }
-        return cuts;
+
+        return false;
+    }
+
+    private static string MakeStateKey(TGraph graph, string virusPosition)
+    {
+        var gatewayEdges = new List<string>();
+        foreach (var gateway in graph.Gateways.OrderBy(g => g, StringComparer.Ordinal))
+            foreach (var neighbour in graph.GetSortedNeighbours(gateway))
+                gatewayEdges.Add($"{gateway}-{neighbour}");
+        return $"{virusPosition}|{string.Join(",", gatewayEdges)}";
     }
 
     private static bool TryFindVirusBestTarget(
@@ -149,34 +191,12 @@ public static class VirusSolver<TGraph> where TGraph : IGraph
         return bestTarget is not null;
     }
     
-    private static bool TryFindNodeToCutOnPath(TGraph graph, string startNode, string targetGateway, [NotNullWhen(true)] out string? nodeToCut)
-    {
-        nodeToCut = null;
-        var distancesToTarget = graph.FindShortestPathsInfo(targetGateway);
-        if (!distancesToTarget.Distances.ContainsKey(startNode))
-            return false;
-
-        var currentNode = startNode;
-        while (true)
-        {
-            if (!TryFindNextStepTowardsTarget(graph, currentNode, distancesToTarget, out var nextStep))
-                return false;
-            
-            if (nextStep == targetGateway)
-            {
-                nodeToCut = currentNode;
-                return true;
-            }
-            
-            currentNode = nextStep;
-        }
-    }
-
     private static bool TryFindNextStepTowardsTarget(
         TGraph graph, string currentNode, PathsInfo distancesToTarget, [NotNullWhen(true)] out string? nextStep)
     {
         nextStep = null;
-        var currentDistance = distancesToTarget.Distances[currentNode];
+        if (!distancesToTarget.Distances.TryGetValue(currentNode, out var currentDistance))
+            return false;
         
         foreach (var neighbour in graph.GetSortedNeighbours(currentNode))
         {
@@ -193,13 +213,6 @@ public static class VirusSolver<TGraph> where TGraph : IGraph
 
 public class Program
 {
-    private static List<string> Solve<TGraph>(List<(string, string)> edges) where TGraph : IGraph
-    {
-        var graph = TGraph.FromEdges(edges);
-        var result = VirusSolver<TGraph>.Solve((TGraph)graph, "a");
-        return result;
-    }
-
     public static void Main()
     {
         var edges = new List<(string, string)>();
@@ -210,7 +223,10 @@ public class Program
                 edges.Add((parts[0], parts[1]));
         }
 
-        var result = Solve<Graph>(edges);
+        var graph = new Graph(edges);
+        var solver = new VirusSolver<Graph>();
+        var result = solver.Solve(graph, "a");
+        
         foreach (var edge in result)
             Console.WriteLine(edge);
     }
