@@ -109,65 +109,27 @@ public static class VirusSolver<TGraph> where TGraph : IGraph
 
         while (true)
         {
-            var pathsFromVirus = graph.FindShortestPathsInfo(virusPosition);
-            var candidateCuts = new List<(string gateway, string node)>();
+            var pathsFromVirusBeforeCut = graph.FindShortestPathsInfo(virusPosition);
+            if (!TryFindVirusBestTarget(graph, pathsFromVirusBeforeCut, out var targetGateway))
+                break; 
 
-            foreach (var gateway in graph.Gateways
-                         .OrderBy(g => g, StringComparer.Ordinal)
-                         .Where(g => pathsFromVirus.Distances.ContainsKey(g)))
-                    if (TryFindNodeToCutForGateway(graph, virusPosition, gateway, out var nodeToCut))
-                        candidateCuts.Add((gateway, nodeToCut));
-
-            if (candidateCuts.Count == 0)
+            if (!TryFindNodeToCutOnPath(graph, virusPosition, targetGateway, out var nodeToCut))
                 break;
             
-            var bestCut = candidateCuts
-                .OrderBy(c => c.gateway, StringComparer.Ordinal)
-                .ThenBy(c => c.node, StringComparer.Ordinal)
-                .First();
-            
-            cuts.Add($"{bestCut.gateway}-{bestCut.node}");
-            graph.TryRemoveEdge(bestCut.gateway, bestCut.node);
+            cuts.Add($"{targetGateway}-{nodeToCut}");
+            graph.TryRemoveEdge(targetGateway, nodeToCut);
 
-            var pathsAfterCut = graph.FindShortestPathsInfo(virusPosition);
-            if (TryFindVirusBestTarget(graph, pathsAfterCut, out var actualTargetGateway))
-            {
-                var distancesToActualTarget = graph.FindShortestPathsInfo(actualTargetGateway);
-                var nextVirusPos = FindNextStepTowardsTarget(graph, virusPosition, distancesToActualTarget);
-
-                if (nextVirusPos != null)
-                    virusPosition = nextVirusPos;
-                else
-                    break;
-            }
-            else
+            var pathsFromVirusAfterCut = graph.FindShortestPathsInfo(virusPosition);
+            if (!TryFindVirusBestTarget(graph, pathsFromVirusAfterCut, out var newTargetGateway))
                 break;
+
+            var distancesToNewTarget = graph.FindShortestPathsInfo(newTargetGateway);
+            if (!TryFindNextStepTowardsTarget(graph, virusPosition, distancesToNewTarget, out var nextVirusPosition))
+                break;
+            
+            virusPosition = nextVirusPosition;
         }
         return cuts;
-    }
-    
-    private static bool TryFindNodeToCutForGateway(TGraph graph, string virusPosition, string gateway, [NotNullWhen(true)] out string? nodeToCut)
-    {
-        nodeToCut = null;
-        var distancesToGateway = graph.FindShortestPathsInfo(gateway);
-        if (!distancesToGateway.Distances.ContainsKey(virusPosition))
-            return false;
-        
-        var currentNodeOnPath = virusPosition;
-        while (true)
-        {
-            var nextNodeOnPath = FindNextStepTowardsTarget(graph, currentNodeOnPath, distancesToGateway);
-            if (nextNodeOnPath is null)
-                return false;
-            
-            if (nextNodeOnPath == gateway)
-            {
-                nodeToCut = currentNodeOnPath;
-                return true;
-            }
-            
-            currentNodeOnPath = nextNodeOnPath;
-        }
     }
 
     private static bool TryFindVirusBestTarget(
@@ -186,17 +148,46 @@ public static class VirusSolver<TGraph> where TGraph : IGraph
         }
         return bestTarget is not null;
     }
-
-    private static string? FindNextStepTowardsTarget(
-        TGraph graph, string currentNode, PathsInfo distancesToTarget)
+    
+    private static bool TryFindNodeToCutOnPath(TGraph graph, string startNode, string targetGateway, [NotNullWhen(true)] out string? nodeToCut)
     {
+        nodeToCut = null;
+        var distancesToTarget = graph.FindShortestPathsInfo(targetGateway);
+        if (!distancesToTarget.Distances.ContainsKey(startNode))
+            return false;
+
+        var currentNode = startNode;
+        while (true)
+        {
+            if (!TryFindNextStepTowardsTarget(graph, currentNode, distancesToTarget, out var nextStep))
+                return false;
+            
+            if (nextStep == targetGateway)
+            {
+                nodeToCut = currentNode;
+                return true;
+            }
+            
+            currentNode = nextStep;
+        }
+    }
+
+    private static bool TryFindNextStepTowardsTarget(
+        TGraph graph, string currentNode, PathsInfo distancesToTarget, [NotNullWhen(true)] out string? nextStep)
+    {
+        nextStep = null;
+        var currentDistance = distancesToTarget.Distances[currentNode];
+        
         foreach (var neighbour in graph.GetSortedNeighbours(currentNode))
         {
-            if (distancesToTarget.Distances.TryGetValue(neighbour, out var distanceToTarget) && 
-                distanceToTarget < distancesToTarget.Distances[currentNode])
-                return neighbour;
+            if (distancesToTarget.Distances.TryGetValue(neighbour, out var neighbourDistance) && 
+                neighbourDistance < currentDistance)
+            {
+                nextStep = neighbour;
+                return true;
+            }
         }
-        return null;
+        return false;
     }
 }
 
